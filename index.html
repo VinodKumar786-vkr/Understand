@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>LingoReader - Cloud Library</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- PDF.js for reliable text extraction -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-tap-highlight-color: transparent; }
+        
+        /* Hide native scrollbars for custom smooth scrolling experience */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        html, body {
+            scrollbar-width: none;
+        }
+
+        /* Reader Themes */
+        .theme-light { background-color: #ffffff; color: #111827; }
+        .theme-sepia { background-color: #fbf0d9; color: #5f4b32; }
+        .theme-dark { background-color: #0f172a; color: #f8fafc; }
+
+        /* Hide scrollbar for clean UI elements */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .pdf-highlight { background: rgba(250, 204, 21, 0.38); border-radius: 3px; padding: 0 1px; }
+        .pdf-heading { font-weight: 700; margin-top: 1.2rem; margin-bottom: .7rem; }
+        .pdf-paragraph { text-indent: 1.15em; margin-bottom: .9rem; }
+        .pdf-page-label { position: sticky; top: 4.2rem; z-index: 10; width: fit-content; }
+    </style>
+</head>
+<body class="h-full theme-dark transition-colors duration-300 overflow-x-hidden">
+
+    <!-- App Container -->
+    <div id="app" class="min-h-full flex flex-col relative">
+
+        <!-- LIBRARY VIEW -->
+        <div id="library-view" class="flex-1 flex flex-col max-w-2xl w-full mx-auto p-4 sm:p-6 pb-24">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-8 pt-2">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">LingoReader</h1>
+                    <p class="text-xs opacity-60 mt-0.5">Tap any word while reading for instant translation</p>
+                </div>
+                <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2.5 rounded-xl text-sm shadow-sm transition flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    Upload PDF
+                    <input type="file" id="pdf-upload" accept=".pdf" class="hidden">
+                </label>
+            </div>
+
+            <!-- Books List -->
+            <div id="books-container" class="space-y-3 flex-1">
+                <!-- Dynamically populated books -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden flex-col items-center justify-center text-center py-16 px-4 my-auto border-2 border-dashed border-gray-700/30 rounded-2xl">
+                <div class="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mb-4">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-1">Your library is empty</h3>
+                <p class="text-sm opacity-60 max-w-xs mb-6">Upload a PDF book to start reading distraction-free with instant word translation.</p>
+                <label class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white font-medium px-5 py-2.5 rounded-xl text-sm transition shadow-sm">
+                    Upload your first book
+                    <input type="file" id="pdf-upload-empty" accept=".pdf" class="hidden">
+                </label>
+            </div>
+        </div>
+
+        <!-- READER VIEW -->
+        <div id="reader-view" class="hidden flex-1 flex flex-col min-h-full">
+            <!-- Custom Drag Scrollbar -->
+            <div id="custom-scrollbar" class="fixed right-1 top-20 bottom-8 w-6 z-[60] flex justify-center touch-none group">
+                <div id="custom-scrollbar-track" class="w-1.5 h-full bg-gray-500/10 rounded-full relative opacity-0 transition-opacity duration-300">
+                    <div id="custom-scrollbar-thumb" class="absolute top-0 left-0 w-full bg-gray-400 hover:bg-blue-500 dark:bg-gray-500 dark:hover:bg-blue-400 rounded-full cursor-pointer shadow-sm transition-transform" style="min-height: 40px;"></div>
+                </div>
+            </div>
+
+            <!-- Minimal Distraction-Free Header -->
+            <header id="reader-header" class="fixed top-0 left-0 right-0 z-50 transition-transform duration-300 bg-inherit border-b border-gray-700/20 backdrop-blur-md bg-opacity-90">
+                <div class="max-w-3xl mx-auto px-4 h-14 flex items-center justify-between">
+                    <!-- Title & Back -->
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <button onclick="backToLibrary()" class="p-2 -ml-2 rounded-lg opacity-70 hover:opacity-100 transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <h2 id="reader-title" class="text-sm font-medium truncate opacity-90">Book Title</h2>
+                    </div>
+
+                    <!-- Controls Group -->
+                    <div class="flex items-center gap-2">
+                        <!-- Font Resizer Pill -->
+                        <div class="flex items-center bg-gray-500/10 rounded-full px-2 py-1 text-xs">
+                            <button onclick="adjustFontSize(-2)" class="px-1.5 py-0.5 opacity-70 hover:opacity-100 font-semibold">A-</button>
+                            <span class="w-[1px] h-3 bg-gray-500/20 mx-1"></span>
+                            <button onclick="adjustFontSize(2)" class="px-1.5 py-0.5 opacity-70 hover:opacity-100 font-semibold">A+</button>
+                        </div>
+
+                        <!-- Theme Selector Pills -->
+                        <div class="flex items-center bg-gray-500/10 rounded-full p-1 gap-1">
+                            <button onclick="setTheme('light')" class="w-5 h-5 rounded-full bg-white border border-gray-300 shadow-sm" title="Light Theme"></button>
+                            <button onclick="setTheme('sepia')" class="w-5 h-5 rounded-full bg-[#fbf0d9] border border-[#e2d0b3] shadow-sm" title="Sepia Theme"></button>
+                            <button onclick="setTheme('dark')" class="w-5 h-5 rounded-full bg-[#0f172a] border border-gray-700 shadow-sm" title="Dark Theme"></button>
+                        </div>
+
+                        <!-- Compact Close -->
+                        <button onclick="backToLibrary()" class="text-xs font-semibold px-2.5 py-1 text-red-500 hover:bg-red-500/10 rounded-full transition">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Optional reading tools: hidden by default -->
+            <button id="toggle-reader-tools"
+                    class="fixed right-3 top-[4.3rem] z-50 hidden px-3 py-2 rounded-xl
+                           bg-slate-900/90 border border-slate-700 text-xs font-semibold
+                           shadow-lg backdrop-blur-md hover:bg-slate-800 transition"
+                    title="Show or hide reading tools">
+                🛠️ Tools
+            </button>
+
+            <div id="reader-tools" class="fixed left-1/2 -translate-x-1/2 top-[4.25rem] z-40 hidden">
+                <div class="flex gap-1 bg-slate-900/95 border border-slate-700 rounded-2xl p-1.5 shadow-xl">
+                    <button id="bookmark-btn" class="px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-white/10">🔖 Bookmark</button>
+                    <button id="page-note-btn" class="px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-white/10">📝 Note</button>
+                    <button id="annotations-btn" class="px-3 py-1.5 rounded-xl text-xs font-semibold hover:bg-white/10">✨ Saved</button>
+                </div>
+            </div>
+
+            <div id="selection-toolbar" class="fixed z-[70] hidden">
+                <div class="flex gap-1 bg-slate-900 border border-slate-700 rounded-xl p-1 shadow-2xl">
+                    <button id="highlight-btn" class="px-2.5 py-1.5 rounded-lg text-xs hover:bg-white/10">🟨 Highlight</button>
+                    <button id="selection-note-btn" class="px-2.5 py-1.5 rounded-lg text-xs hover:bg-white/10">📝 Note</button>
+                </div>
+            </div>
+
+            <div id="annotations-modal" class="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm hidden items-center justify-center p-4">
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 max-w-lg w-full max-h-[80vh] overflow-y-auto text-slate-100 shadow-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">Bookmarks, Highlights & Notes</h3>
+                        <button id="close-annotations" class="opacity-60 hover:opacity-100">✕</button>
+                    </div>
+                    <div id="annotations-list" class="space-y-3"></div>
+                </div>
+            </div>
+
+            <!-- Book Content Container -->
+            <main class="flex-1 max-w-2xl w-full mx-auto px-6 sm:px-8 pt-24 pb-32">
+                <div id="reader-content" class="space-y-6 leading-relaxed selection:bg-blue-500/30">
+                    <!-- Extracted pages will be injected here -->
+                </div>
+            </main>
+        </div>
+
+        <!-- Extraction Loader Modal -->
+        <div id="loading-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl text-slate-100">
+                <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <h3 id="loading-title" class="text-base font-semibold mb-1">Processing PDF...</h3>
+                <p id="loading-text" class="text-xs text-slate-400">Extracting text layout for comfortable reading.</p>
+            </div>
+        </div>
+
+        <!-- Custom Modal for Errors/Messages -->
+        <div id="message-modal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm hidden items-center justify-center p-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full text-center shadow-2xl text-slate-100">
+                <h3 id="modal-title" class="text-lg font-bold mb-2">Notice</h3>
+                <p id="modal-text" class="text-sm text-slate-300 mb-6">Message content here.</p>
+                <button onclick="closeModal()" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2.5 rounded-xl text-sm transition">Got it</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // GitHub Pages compatible version.
+        // The original version expected __firebase_config / __app_id to be injected
+        // by its original hosting environment. GitHub Pages does not provide those
+        // variables, so the app crashed before the PDF upload handler could run.
+        // This version stores extracted books in IndexedDB (on this browser/device).
+
+        const DB_NAME = 'LingoReaderDB';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'books';
+
+        let db = null;
+        let books = [];
+        let currentBookId = null;
+        let currentTheme = 'dark';
+        let currentFontSize = 18;
+        let lastScrollTop = 0;
+        let isDraggingScrollbar = false;
+        let scrollTimeout;
+        let pendingSelection = null;
+        let annotations = JSON.parse(localStorage.getItem('lingoreader_annotations_v2') || '{}');
+        let readerToolsVisible = localStorage.getItem('lingoreader_tools_visible') === 'true';
+        let isExtracting = false;
+
+        const ui = {
+            libraryView: document.getElementById('library-view'),
+            readerView: document.getElementById('reader-view'),
+            booksContainer: document.getElementById('books-container'),
+            emptyState: document.getElementById('empty-state'),
+            pdfUpload: document.getElementById('pdf-upload'),
+            emptyPdfUpload: document.getElementById('pdf-upload-empty'),
+            readerTitle: document.getElementById('reader-title'),
+            readerContent: document.getElementById('reader-content'),
+            readerHeader: document.getElementById('reader-header'),
+            loadingModal: document.getElementById('loading-modal'),
+            loadingTitle: document.getElementById('loading-title'),
+            loadingText: document.getElementById('loading-text'),
+            messageModal: document.getElementById('message-modal'),
+            modalTitle: document.getElementById('modal-title'),
+            modalText: document.getElementById('modal-text'),
+            scrollbar: document.getElementById('custom-scrollbar'),
+            scrollbarTrack: document.getElementById('custom-scrollbar-track'),
+            scrollbarThumb: document.getElementById('custom-scrollbar-thumb')
+        };
+
+        function showModal(title, text) {
+            ui.modalTitle.textContent = title;
+            ui.modalText.textContent = text;
+            ui.messageModal.classList.remove('hidden');
+            ui.messageModal.classList.add('flex');
+        }
+
+        window.closeModal = function() {
+            ui.messageModal.classList.remove('flex');
+            ui.messageModal.classList.add('hidden');
+        };
+
+        function openDatabase() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onupgradeneeded = () => {
+                    const database = request.result;
+                    if (!database.objectStoreNames.contains(STORE_NAME)) {
+                        database.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                    }
+                };
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        function getAllBooks() {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const req = tx.objectStore(STORE_NAME).getAll();
+                req.onsuccess = () => resolve(req.result || []);
+                req.onerror = () => reject(req.error);
+            });
+        }
+
+        function saveBook(book) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).put(book);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        function removeBook(bookId) {
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                tx.objectStore(STORE_NAME).delete(bookId);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        async function refreshBooks() {
+            books = await getAllBooks();
+            renderLibrary();
+        }
+
+        function renderLibrary() {
+            ui.booksContainer.innerHTML = '';
+            books.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+
+            if (books.length === 0) {
+                ui.emptyState.classList.remove('hidden');
+                ui.emptyState.classList.add('flex');
+                return;
+            }
+
+            ui.emptyState.classList.remove('flex');
+            ui.emptyState.classList.add('hidden');
+
+            books.forEach(book => {
+                const card = document.createElement('div');
+                card.className = 'p-4 rounded-2xl border border-gray-700/30 bg-gray-800/20 hover:bg-gray-800/40 transition flex items-center justify-between cursor-pointer group';
+                const progress = book.progress || 0;
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-3.5 overflow-hidden">
+                        <div class="w-10 h-12 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold text-sm shrink-0">PDF</div>
+                        <div class="overflow-hidden">
+                            <h3 class="font-semibold text-sm truncate group-hover:text-blue-400 transition">${escapeHtml(book.title)}</h3>
+                            <p class="text-xs opacity-60 mt-0.5">${book.pages ? book.pages.length : 0} pages • Progress: ${Math.round(progress)}%</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button class="delete-book p-2 opacity-40 hover:opacity-100 text-red-400 transition" title="Delete Book">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>`;
+
+                card.querySelector('.delete-book').addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    await window.deleteBook(book.id);
+                });
+                card.addEventListener('click', () => openBook(book.id, book));
+                ui.booksContainer.appendChild(card);
+            });
+        }
+
+        window.deleteBook = async function(bookId) {
+            try {
+                await removeBook(bookId);
+                if (currentBookId === bookId) backToLibrary();
+                await refreshBooks();
+            } catch (err) {
+                console.error(err);
+                showModal('Error', 'Could not delete this book from browser storage.');
+            }
+        };
+
+        async function handlePdfUpload(e) {
+            const file = e.target.files && e.target.files[0];
+            e.target.value = '';
+            if (!file || isExtracting) return;
+
+            if (!file.name.toLowerCase().endsWith('.pdf') && file.type !== 'application/pdf') {
+                showModal('Invalid file', 'Please select a PDF file.');
+                return;
+            }
+
+            try {
+                const headerBuffer = await file.slice(0, 5).arrayBuffer();
+                const headerText = new TextDecoder().decode(new Uint8Array(headerBuffer));
+                if (headerText !== '%PDF-') {
+                    showModal('Invalid PDF File', 'This file does not have a valid PDF header. Please select a genuine PDF.');
+                    return;
+                }
+            } catch (err) {
+                console.error(err);
+                showModal('Read Error', 'Could not read the selected file.');
+                return;
+            }
+
+            await processAndSavePDF(file);
+        }
+
+        ui.pdfUpload.addEventListener('change', handlePdfUpload);
+        ui.emptyPdfUpload.addEventListener('change', handlePdfUpload);
+
+        async function processAndSavePDF(file) {
+            isExtracting = true;
+            ui.loadingTitle.textContent = 'Processing PDF...';
+            ui.loadingText.textContent = 'Loading file into memory...';
+            ui.loadingModal.classList.remove('hidden');
+            ui.loadingModal.classList.add('flex');
+
+            try {
+                if (typeof pdfjsLib === 'undefined') {
+                    throw new Error('PDF.js failed to load. Check your internet connection or CDN access.');
+                }
+
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                const pdfDoc = await loadingTask.promise;
+                const extractedPages = [];
+
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    ui.loadingText.textContent = `Extracting page ${i} of ${pdfDoc.numPages}...`;
+                    try {
+                        const page = await pdfDoc.getPage(i);
+                        const textContent = await page.getTextContent();
+                        const structured = extractStructuredPage(textContent, page.getViewport({scale:1}));
+                        extractedPages.push(structured.blocks.length
+                            ? structured
+                            : {blocks:[{type:'paragraph',text:'[Scanned or image-based page]'}]});
+                    } catch (pageErr) {
+                        console.warn(`Skipped unreadable page ${i}:`, pageErr);
+                        extractedPages.push({blocks:[{type:'paragraph',text:'[Error extracting page content]'}]});
+                    }
+                }
+
+                ui.loadingText.textContent = 'Saving to your browser library...';
+                const newBook = {
+                    id: (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString()),
+                    title: file.name.replace(/\.[^/.]+$/, ''),
+                    pages: extractedPages,
+                    progress: 0,
+                    scrollTop: 0,
+                    addedAt: Date.now()
+                };
+
+                await saveBook(newBook);
+                await refreshBooks();
+                hideLoading();
+                openBook(newBook.id, newBook);
+            } catch (error) {
+                console.error('PDF Parsing Error:', error);
+                hideLoading();
+                const msg = error && error.message ? error.message : 'Unknown error occurred.';
+                if (error && (error.name === 'PasswordException' || msg.toLowerCase().includes('password'))) {
+                    showModal('Password Protected', 'This PDF is encrypted with a password. Unlock it before uploading.');
+                } else if (error && error.name === 'InvalidPDFException') {
+                    showModal('Invalid PDF', 'PDF.js could not read this PDF. It may be corrupted or unsupported.');
+                } else {
+                    showModal('PDF Error', msg);
+                }
+            } finally {
+                isExtracting = false;
+            }
+        }
+
+        function hideLoading() {
+            ui.loadingModal.classList.remove('flex');
+            ui.loadingModal.classList.add('hidden');
+        }
+
+
+        function cleanPdfText(text) {
+            return String(text||'').replace(/\u00ad/g,'').replace(/\s+/g,' ')
+                .replace(/-\s+(?=[a-z])/gi,'').trim();
+        }
+
+        function median(a) {
+            if (!a.length) return 0;
+            a=[...a].sort((x,y)=>x-y);
+            const m=Math.floor(a.length/2);
+            return a.length%2?a[m]:(a[m-1]+a[m])/2;
+        }
+
+        // Rebuild visual lines from PDF coordinates and infer paragraphs/headings.
+        function extractStructuredPage(textContent, viewport) {
+            const items=textContent.items.filter(i=>i.str&&i.str.trim()).map(i=>{
+                const tx=pdfjsLib.Util.transform(viewport.transform,i.transform);
+                const fs=Math.max(7,Math.abs(tx[3]||i.height||10));
+                return {text:i.str.replace(/\s+/g,' ').trim(),x:tx[4],y:tx[5],
+                    width:i.width||0,height:i.height||fs,fontSize:fs};
+            });
+            if(!items.length) return {blocks:[]};
+
+            items.sort((a,b)=>b.y-a.y||a.x-b.x);
+            const tol=Math.max(3,median(items.map(i=>i.height))*.55), lines=[];
+            for(const item of items){
+                let line=lines.find(l=>Math.abs(l.y-item.y)<=tol);
+                if(!line){line={y:item.y,items:[]};lines.push(line);}
+                line.items.push(item);
+            }
+            lines.forEach(l=>l.items.sort((a,b)=>a.x-b.x));
+            lines.sort((a,b)=>b.y-a.y);
+
+            // Common two-column detection: read the left column, then the right.
+            const mid=viewport.width/2,left=[],right=[];
+            lines.forEach(l=>{
+                const x=l.items.reduce((s,i)=>s+i.x,0)/l.items.length;
+                if(x<mid*.92) left.push(l);
+                else if(x>mid*1.08) right.push(l);
+            });
+            const twoColumn=left.length>8&&right.length>8&&
+                Math.min(left.length,right.length)/Math.max(left.length,right.length)>.25;
+            const ordered=twoColumn
+                ? [...left.sort((a,b)=>b.y-a.y),...right.sort((a,b)=>b.y-a.y)]
+                : lines;
+
+            const normalFont=median(items.map(i=>i.fontSize));
+            const normalHeight=median(items.map(i=>i.height));
+            const blocks=[]; let current=null;
+            const flush=()=>{
+                if(!current)return;
+                const text=cleanPdfText(current.text);
+                if(text)blocks.push({type:current.type,text});
+                current=null;
+            };
+
+            ordered.forEach((line,idx)=>{
+                const text=cleanPdfText(line.items.map(i=>i.text).join(' '));
+                if(!text)return;
+                const font=line.items.reduce((s,i)=>s+i.fontSize,0)/line.items.length;
+                const heading=(font>=normalFont*1.28&&text.length<120) ||
+                    (/^[A-Z0-9][A-Z0-9\s:–—-]{4,}$/.test(text)&&text.length<90);
+                const prev=ordered[idx-1];
+                const gap=prev?Math.abs(prev.y-line.y):0;
+                const newBlock=!current||heading||gap>normalHeight*1.7;
+
+                if(newBlock){flush();current={type:heading?'heading':'paragraph',text};}
+                else if(/-$/.test(current.text)) current.text=current.text.slice(0,-1)+text;
+                else current.text+=' '+text;
+            });
+            flush();
+
+            return {blocks:blocks.filter((b,i)=>
+                !(/^\\d{1,4}$/.test(b.text)&&(i===0||i===blocks.length-1))
+            )};
+        }
+
+        function getAnnotations(bookId){
+            if(!annotations[bookId])annotations[bookId]={bookmarks:[],highlights:[],notes:[]};
+            return annotations[bookId];
+        }
+        function saveAnnotations(){
+            localStorage.setItem('lingoreader_annotations_v2',JSON.stringify(annotations));
+        }
+        function getCurrentPage(){
+            const pages=[...ui.readerContent.querySelectorAll('[data-page]')];
+            let best=1,distance=Infinity;
+            pages.forEach(p=>{const d=Math.abs(p.getBoundingClientRect().top-100);
+                if(d<distance){distance=d;best=Number(p.dataset.page);}});
+            return best;
+        }
+        function bookmarkCurrentPage(){
+            if(!currentBookId)return;
+            const a=getAnnotations(currentBookId),page=getCurrentPage();
+            if(a.bookmarks.includes(page)){
+                a.bookmarks=a.bookmarks.filter(p=>p!==page);
+                showModal('Bookmark removed',`Page ${page} is no longer bookmarked.`);
+            }else{
+                a.bookmarks.push(page);a.bookmarks.sort((x,y)=>x-y);
+                showModal('Page bookmarked',`Page ${page} has been bookmarked.`);
+            }
+            saveAnnotations();
+        }
+        function addPageNote(){
+            if(!currentBookId)return;
+            const page=getCurrentPage(),text=prompt(`Note for page ${page}:`);
+            if(!text||!text.trim())return;
+            getAnnotations(currentBookId).notes.push({
+                id:crypto.randomUUID(),page,text:text.trim(),createdAt:Date.now()
+            });
+            saveAnnotations();showModal('Note saved',`Your note for page ${page} was saved.`);
+        }
+        function highlightSelection(){
+            if(!pendingSelection||!currentBookId)return;
+            const text=pendingSelection.range.toString().trim();
+            if(!text)return;
+            const node=pendingSelection.range.commonAncestorContainer;
+            const page=(node.nodeType===1?node:node.parentElement)?.closest('[data-page]');
+            getAnnotations(currentBookId).highlights.push({
+                id:crypto.randomUUID(),page:page?Number(page.dataset.page):getCurrentPage(),
+                text,createdAt:Date.now()
+            });
+            saveAnnotations();renderHighlights();hideSelectionToolbar();
+        }
+        function renderHighlights(){
+            if(!currentBookId)return;
+            getAnnotations(currentBookId).highlights.forEach(h=>{
+                const page=document.querySelector(`[data-page="${h.page}"]`);
+                if(!page||page.querySelector(`mark[data-highlight-id="${h.id}"]`))return;
+                const walker=document.createTreeWalker(page,NodeFilter.SHOW_TEXT);
+                while(walker.nextNode()){
+                    const node=walker.currentNode,index=node.nodeValue.indexOf(h.text);
+                    if(index<0)continue;
+                    const range=document.createRange();
+                    range.setStart(node,index);range.setEnd(node,index+h.text.length);
+                    const mark=document.createElement('mark');
+                    mark.className='pdf-highlight';mark.dataset.highlightId=h.id;
+                    try{range.surroundContents(mark);}catch(_){}
+                    break;
+                }
+            });
+        }
+        function showAnnotations(){
+            if(!currentBookId)return;
+            const a=getAnnotations(currentBookId),list=document.getElementById('annotations-list');
+            list.innerHTML='';
+            if(!a.bookmarks.length&&!a.highlights.length&&!a.notes.length)
+                list.innerHTML='<p class="text-sm opacity-60">Nothing saved yet.</p>';
+
+            a.bookmarks.forEach(page=>{
+                const row=document.createElement('div');
+                row.className='p-3 rounded-xl bg-white/5 cursor-pointer hover:bg-white/10';
+                row.innerHTML=`<div class="text-xs opacity-50">BOOKMARK</div><div class="text-sm font-semibold">Page ${page}</div>`;
+                row.onclick=()=>{closeAnnotations();document.getElementById(`page-${page}`)?.scrollIntoView({behavior:'smooth'});};
+                list.appendChild(row);
+            });
+            a.highlights.forEach(h=>{
+                const row=document.createElement('div');row.className='p-3 rounded-xl bg-white/5';
+                row.innerHTML=`<div class="text-xs opacity-50">HIGHLIGHT • PAGE ${h.page}</div><div class="text-sm">“${escapeHtml(h.text)}”</div>`;
+                list.appendChild(row);
+            });
+            a.notes.forEach(n=>{
+                const row=document.createElement('div');row.className='p-3 rounded-xl bg-white/5';
+                row.innerHTML=`<div class="text-xs opacity-50">NOTE • PAGE ${n.page}</div><div class="text-sm">${escapeHtml(n.text)}</div>`;
+                list.appendChild(row);
+            });
+            const modal=document.getElementById('annotations-modal');
+            modal.classList.remove('hidden');modal.classList.add('flex');
+        }
+        function closeAnnotations(){
+            const modal=document.getElementById('annotations-modal');
+            modal.classList.remove('flex');modal.classList.add('hidden');
+        }
+        function hideSelectionToolbar(){
+            document.getElementById('selection-toolbar').classList.add('hidden');
+            pendingSelection=null;
+        }
+        document.addEventListener('selectionchange',()=>{
+            if(ui.readerView.classList.contains('hidden'))return;
+            clearTimeout(window.__selectionTimer);
+            window.__selectionTimer=setTimeout(()=>{
+                const sel=window.getSelection();
+                if(!sel||sel.rangeCount===0||sel.isCollapsed||!sel.toString().trim())return;
+                if(!sel.anchorNode?.parentElement?.closest('#reader-content'))return;
+                pendingSelection={range:sel.getRangeAt(0).cloneRange()};
+                const r=pendingSelection.range.getBoundingClientRect(),bar=document.getElementById('selection-toolbar');
+                bar.style.left=`${Math.max(8,Math.min(window.innerWidth-190,r.left))}px`;
+                bar.style.top=`${Math.max(60,r.top-50)}px`;bar.classList.remove('hidden');
+            },80);
+        });
+        document.getElementById('highlight-btn').addEventListener('click',highlightSelection);
+        document.getElementById('selection-note-btn').addEventListener('click',()=>{
+            if(!pendingSelection||!currentBookId)return;
+            const quote=pendingSelection.range.toString().trim(),note=prompt('Add a note about this selection:');
+            if(!quote||!note||!note.trim())return;
+            const node=pendingSelection.range.commonAncestorContainer;
+            const page=(node.nodeType===1?node:node.parentElement)?.closest('[data-page]');
+            getAnnotations(currentBookId).notes.push({
+                id:crypto.randomUUID(),page:page?Number(page.dataset.page):getCurrentPage(),
+                text:note.trim(),quote,createdAt:Date.now()
+            });
+            saveAnnotations();hideSelectionToolbar();
+        });
+        document.getElementById('bookmark-btn').addEventListener('click',bookmarkCurrentPage);
+        document.getElementById('page-note-btn').addEventListener('click',addPageNote);
+        document.getElementById('annotations-btn').addEventListener('click',showAnnotations);
+        document.getElementById('close-annotations').addEventListener('click',closeAnnotations);
+
+        function setReaderToolsVisibility(visible) {
+            readerToolsVisible = visible;
+            localStorage.setItem('lingoreader_tools_visible', String(visible));
+
+            const tools = document.getElementById('reader-tools');
+            const toggle = document.getElementById('toggle-reader-tools');
+
+            if (visible) {
+                tools.classList.remove('hidden');
+                toggle.textContent = '✕ Tools';
+                toggle.title = 'Hide reading tools';
+            } else {
+                tools.classList.add('hidden');
+                toggle.textContent = '🛠️ Tools';
+                toggle.title = 'Show reading tools';
+            }
+        }
+
+        document.getElementById('toggle-reader-tools').addEventListener('click', () => {
+            setReaderToolsVisibility(!readerToolsVisible);
+        });
+
+        function openBook(bookId,bookData){
+            currentBookId=bookId;ui.readerTitle.textContent=bookData.title;ui.readerContent.innerHTML='';
+            (bookData.pages||[]).forEach((pageData,index)=>{
+                const page=typeof pageData==='string'
+                    ?{blocks:pageData.split(/\n+/).filter(Boolean).map(t=>({type:'paragraph',text:cleanPdfText(t)}))}
+                    :pageData;
+                const pageDiv=document.createElement('section');
+                pageDiv.className='mb-14 relative';pageDiv.dataset.page=index+1;pageDiv.id=`page-${index+1}`;
+                const label=document.createElement('div');
+                label.className='pdf-page-label text-[11px] font-semibold opacity-40 uppercase tracking-widest mb-4 select-none bg-inherit px-2 py-1 rounded';
+                label.textContent=`Page ${index+1}`;pageDiv.appendChild(label);
+                (page.blocks||[]).forEach(block=>{
+                    const el=document.createElement(block.type==='heading'?'h3':'p');
+                    el.className=block.type==='heading'?'pdf-heading leading-snug':'pdf-paragraph leading-relaxed';
+                    el.style.fontSize=`${block.type==='heading'?currentFontSize+3:currentFontSize}px`;
+                    el.textContent=block.text;pageDiv.appendChild(el);
+                });
+                ui.readerContent.appendChild(pageDiv);
+            });
+            ui.libraryView.classList.add('hidden');
+            ui.readerView.classList.remove('hidden');
+
+            // Small Tools button is always available; the larger toolbar is optional.
+            document.getElementById('toggle-reader-tools').classList.remove('hidden');
+            setReaderToolsVisibility(readerToolsVisible);
+
+            setTimeout(()=>{window.scrollTo({top:bookData.scrollTop||0,behavior:'instant'});updateScrollbar();renderHighlights();},80);
+        }
+
+        window.backToLibrary = async function() {
+            if (currentBookId) {
+                try {
+                    const book = books.find(b => b.id === currentBookId);
+                    if (book) {
+                        const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+                        const scrollPercent = maxScroll > 0 ? (window.scrollY / maxScroll) * 100 : 0;
+                        book.scrollTop = window.scrollY;
+                        book.progress = Math.min(100, Math.max(0, scrollPercent));
+                        await saveBook(book);
+                        await refreshBooks();
+                    }
+                } catch (e) {
+                    console.error('Could not save progress:', e);
+                }
+            }
+            currentBookId = null;
+            ui.readerView.classList.add('hidden');
+            ui.libraryView.classList.remove('hidden');
+            document.getElementById('reader-tools').classList.add('hidden');
+            document.getElementById('toggle-reader-tools').classList.add('hidden');
+            hideSelectionToolbar();
+        };
+
+        window.addEventListener('scroll', () => {
+            if (ui.readerView.classList.contains('hidden')) return;
+            const currentScroll = window.pageYOffset || document.documentElement.scrollTop;
+            if (currentScroll > lastScrollTop && currentScroll > 80) {
+                ui.readerHeader.style.transform = 'translateY(-100%)';
+            } else {
+                ui.readerHeader.style.transform = 'translateY(0%)';
+            }
+            lastScrollTop = currentScroll <= 0 ? 0 : currentScroll;
+            if (!isDraggingScrollbar) updateScrollbar();
+        });
+
+        function updateScrollbar() {
+            const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight;
+            if (scrollableHeight <= 0) return;
+            const scrollPercentage = window.scrollY / scrollableHeight;
+            const trackHeight = ui.scrollbarTrack.clientHeight;
+            const thumbHeight = Math.max(40, (window.innerHeight / document.documentElement.scrollHeight) * trackHeight);
+            ui.scrollbarThumb.style.height = `${thumbHeight}px`;
+            const maxThumbTop = trackHeight - thumbHeight;
+            ui.scrollbarThumb.style.transform = `translateY(${scrollPercentage * maxThumbTop}px)`;
+            ui.scrollbarTrack.classList.remove('opacity-0');
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                if (!isDraggingScrollbar) ui.scrollbarTrack.classList.add('opacity-0');
+            }, 1500);
+        }
+
+        function handleScrollbarDrag(e) {
+            e.preventDefault();
+            isDraggingScrollbar = true;
+            ui.scrollbarTrack.classList.remove('opacity-0');
+            const trackRect = ui.scrollbarTrack.getBoundingClientRect();
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            let percentage = (clientY - trackRect.top) / trackRect.height;
+            percentage = Math.max(0, Math.min(1, percentage));
+            const scrollableHeight = document.documentElement.scrollHeight - window.innerHeight;
+            window.scrollTo({ top: percentage * scrollableHeight, behavior: 'instant' });
+            updateScrollbar();
+        }
+
+        function stopScrollbarDrag() {
+            if (!isDraggingScrollbar) return;
+            isDraggingScrollbar = false;
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => ui.scrollbarTrack.classList.add('opacity-0'), 1500);
+        }
+
+        ui.scrollbar.addEventListener('mousedown', handleScrollbarDrag);
+        window.addEventListener('mousemove', e => { if (isDraggingScrollbar) handleScrollbarDrag(e); });
+        window.addEventListener('mouseup', stopScrollbarDrag);
+        ui.scrollbar.addEventListener('touchstart', handleScrollbarDrag, { passive: false });
+        window.addEventListener('touchmove', e => { if (isDraggingScrollbar) handleScrollbarDrag(e); }, { passive: false });
+        window.addEventListener('touchend', stopScrollbarDrag);
+
+        window.setTheme = function(theme) {
+            currentTheme = theme;
+            document.body.className = `h-full transition-colors duration-300 overflow-x-hidden theme-${theme}`;
+        };
+
+        window.adjustFontSize = function(delta) {
+            currentFontSize = Math.max(14, Math.min(28, currentFontSize + delta));
+            ui.readerContent.querySelectorAll('p').forEach(p => p.style.fontSize = `${currentFontSize}px`);
+        };
+
+        function escapeHtml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        async function initApp() {
+            try {
+                db = await openDatabase();
+                await refreshBooks();
+            } catch (err) {
+                console.error('Database initialization error:', err);
+                showModal('Storage Error', 'Your browser blocked IndexedDB storage. Try opening the GitHub Pages site in a normal browser tab, not a private/restricted webview.');
+            }
+        }
+
+        initApp();
+    </script>
+</body>
+</html>
